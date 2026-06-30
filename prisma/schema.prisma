@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Rastreia cada vídeo descoberto na playlist "Assistir Mais Tarde" ou "Curtidos".
+/// Status pipeline: pending → processing → done | failed | skipped
+model Video {
+  id            String    @id @default(cuid())
+  youtubeId     String    @unique
+  title         String
+  channelName   String
+  url           String
+  duration      Int?                // duração em segundos
+  thumbnailUrl  String?
+  source        String    @default("watchlater") // watchlater | liked
+  videoType     String    @default("video")      // video | short
+  addedToWL     DateTime?           // quando foi adicionado à WL (se disponível)
+  discoveredAt  DateTime  @default(now())
+  processedAt   DateTime?
+  removedFromWL Boolean   @default(false)
+  status        String    @default("pending") // pending | processing | done | failed | skipped
+  errorMessage  String?
+  summaryPath   String?             // caminho do .md gerado
+  transcriptRaw String?             // texto bruto da transcrição (para re-processamento)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  logs ProcessingLog[]
+
+  @@index([status])
+  @@index([youtubeId])
+  @@index([discoveredAt])
+  @@index([removedFromWL])
+  @@index([source])
+  @@index([videoType])
+  @@index([source, videoType])
+}
+
+/// Log de auditoria de cada etapa do pipeline de processamento.
+model ProcessingLog {
+  id         String   @id @default(cuid())
+  videoId    String
+  video      Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  action     String   // sync | transcript | summarize | remove | notify
+  success    Boolean
+  durationMs Int?
+  metadata   String?  // JSON com dados extras
+  createdAt  DateTime @default(now())
+
+  @@index([videoId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+/// Key-value store para estado da aplicação (último sync, versão, etc.)
+model AppState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
