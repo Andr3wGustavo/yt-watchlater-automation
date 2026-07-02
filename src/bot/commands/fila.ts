@@ -10,10 +10,26 @@ const log = createChildLogger('cmd:fila');
 const MAX_BATCH_SIZE = 10;
 
 export const filaCommand: BotCommand = {
-  data: (new SlashCommandBuilder()) as SlashCommandBuilder,
+  data: (new SlashCommandBuilder()
+    .setName('fila')
+    .setDescription('Processa vídeos da fila')
+    .addIntegerOption(option =>
+      option
+        .setName('quantidade')
+        .setDescription('Quantidade de vídeos para processar')
+        .setMinValue(1)
+        .setMaxValue(MAX_BATCH_SIZE)
+    )
+    .addStringOption(option =>
+      option
+        .setName('termo')
+        .setDescription('Filtra a fila por uma palavra-chave no título')
+        .setRequired(false)
+    )) as SlashCommandBuilder,
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const quantidade = interaction.options.getInteger('quantidade') ?? 5;
+    const termo = interaction.options.getString('termo');
 
     await interaction.deferReply();
 
@@ -39,7 +55,8 @@ export const filaCommand: BotCommand = {
           OR: [
             { status: 'pending' },
             { status: 'failed', retryCount: { lt: 3 } }
-          ]
+          ],
+          ...(termo ? { title: { contains: termo } } : {})
         },
         orderBy: { discoveredAt: 'asc' },
         take: quantidade,

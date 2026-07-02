@@ -148,6 +148,24 @@ async function processNext(): Promise<void> {
 
     const textChannel = channel as TextChannel;
 
+    // ----- WEEKLY DIGEST -----
+    const now = new Date();
+    if (now.getDay() === 1 && now.getHours() >= 9) { // Segunda-feira, a partir das 9h
+      const lastDigest = await prisma.appState.findUnique({ where: { key: 'lastWeeklyDigest' } });
+      const lastDigestDate = lastDigest ? new Date(lastDigest.value) : new Date(0);
+      
+      // Se não enviou na última semana (margem de 6 dias para não reenviar no mesmo dia)
+      if (now.getTime() - lastDigestDate.getTime() > 6 * 24 * 60 * 60 * 1000) {
+        await sendWeeklyDigest(textChannel);
+        await prisma.appState.upsert({
+          where: { key: 'lastWeeklyDigest' },
+          update: { value: now.toISOString() },
+          create: { key: 'lastWeeklyDigest', value: now.toISOString() }
+        });
+      }
+    }
+    // -------------------------
+
     // Verificar se há vídeos pendentes
     let pendingCount = await prisma.video.count({ 
       where: { 
@@ -243,7 +261,19 @@ async function processNext(): Promise<void> {
         )
         .setTimestamp();
 
-      await textChannel.send({ embeds: [doneEmbed], files: [attachment] });
+      const msg = await textChannel.send({ embeds: [doneEmbed] });
+      
+      try {
+        const threadName = (result.title || 'Resumo do Vídeo').substring(0, 95);
+        const thread = await msg.startThread({
+          name: threadName,
+          autoArchiveDuration: 1440, // 24 horas
+        });
+        await thread.send({ content: '📄 Aqui está o documento com os insights completos:', files: [attachment] });
+      } catch (err: any) {
+        log.warn({ err: err.message }, 'Não foi possível criar a thread, enviando no canal principal.');
+        await textChannel.send({ content: '📄 Resumo completo:', files: [attachment] });
+      }
     } else {
       const failEmbed = new EmbedBuilder()
         .setColor(0xFF4444)
@@ -260,3 +290,52 @@ async function processNext(): Promise<void> {
     log.error({ err: error.message }, 'Erro no ciclo do autopilot');
   }
 }
+
+async function sendWeeklyDigest(channel: TextChannel) {
+  try {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    const doneThisWeek = await prisma.video.findMany({
+      where: {
+        status: 'done',
+        processedAt: { gte: oneWeekAgo }
+      },
+      select: { tags: true }
+    });
+
+    if (doneThisWeek.length === 0) return; // Se não processou nada, não envia spam
+
+    // Contar tags
+    const tagCount: Record<string, number> = {};
+    doneThisWeek.forEach(v => {
+      if (v.tags) {
+        const tags = v.tags.split(',').map(t => t.trim().toLowerCase());
+        tags.forEach(t => {
+          tagCount[t] = (tagCount[t] || 0) + 1;
+        });
+      }
+    });
+
+    const topTags = Object.entries(tagCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(t => `${t[0]} (${t[1]})`)
+      .join(', ');
+
+    const embed = new EmbedBuilder()
+      .setColor(0x9B59B6)
+      .setTitle('📊 Resumo Semanal (Weekly Digest)')
+      .setDescription(`Bom dia! Aqui está o balanço do seu Segundo Cérebro na última semana:`)
+      .addFields(
+        { name: '✅ Vídeos Processados', value: `${doneThisWeek.length}`, inline: true },
+        { name: '🏷️ Assuntos em Alta', value: topTags || 'Nenhum', inline: false }
+      )
+      .setFooter({ text: 'Continuamos evoluindo! 🚀' });
+
+    await channel.send({ embeds: [embed] });
+  } catch (error: any) {
+    log.error({ err: error.message }, 'Erro ao enviar weekly digest');
+  }
+}
+

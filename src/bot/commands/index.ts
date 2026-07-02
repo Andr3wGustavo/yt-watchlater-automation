@@ -11,6 +11,8 @@ import { curtidosCommand } from './curtidos.js';
 import { whatsappSetupCommand, whatsappCommand } from './whatsapp-setup.js';
 import { pularCommand } from './pular.js';
 import { reprocessarCommand } from './reprocessar.js';
+import { buscarCommand } from './buscar.js';
+import { canaisCommand } from './canais.js';
 
 /**
  * Interface de um comando do bot.
@@ -39,5 +41,7 @@ export function loadCommands(): BotCommand[] {
     whatsappCommand,
     pularCommand,
     reprocessarCommand,
+    buscarCommand,
+    canaisCommand,
   ];
 }

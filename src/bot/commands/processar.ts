@@ -37,10 +37,21 @@ export const processarCommand: BotCommand = {
 
         const attachment = new AttachmentBuilder(fileBuffer, { name: fileName });
 
-        await interaction.editReply({
+        const message = await interaction.editReply({
           content: `✅ **${result.title}** processado com sucesso!\n🗑️ Vídeo removido da WL.`,
-          files: [attachment],
         });
+
+        try {
+          const threadName = (result.title || 'Resumo do Vídeo').substring(0, 95);
+          const thread = await message.startThread({
+            name: threadName,
+            autoArchiveDuration: 1440,
+          });
+          await thread.send({ content: '📄 Aqui está o documento com os insights completos:', files: [attachment] });
+        } catch (err: any) {
+          log.warn({ err: err.message }, 'Não foi possível criar a thread, enviando no canal principal.');
+          await interaction.followUp({ content: '📄 Resumo completo:', files: [attachment] });
+        }
       } else if (result.status === 'partial') {
         await interaction.editReply(
           `⚠️ **${result.title}** processado parcialmente.\n` +

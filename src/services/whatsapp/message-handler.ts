@@ -116,6 +116,19 @@ async function handleCommand(text: string, jid: string, sock: WASocket) {
         }
         break;
 
+      case '!buscar':
+        if (args.length < 2) {
+          await sendMessage(jid, '❌ Uso: `!buscar <termo ou #tag>`');
+        } else {
+          const termo = args.slice(1).join(' ').trim();
+          await handleBuscar(jid, termo);
+        }
+        break;
+
+      case '!canais':
+        await handleCanais(jid);
+        break;
+
       default:
         // Comando não reconhecido, ignorar para não fazer spam.
         break;
@@ -263,3 +276,64 @@ async function handleReprocessar(jid: string, urlInput: string) {
   }
 }
 
+async function handleBuscar(jid: string, termo: string) {
+  await sendMessage(jid, `🔍 Buscando por "${termo}"...`);
+
+  const videos = await prisma.video.findMany({
+    where: {
+      status: 'done',
+      OR: [
+        { title: { contains: termo } },
+        { channelName: { contains: termo } },
+        { tags: { contains: termo } },
+      ]
+    },
+    orderBy: { processedAt: 'desc' },
+    take: 10,
+  });
+
+  if (videos.length === 0) {
+    await sendMessage(jid, `❌ Nenhum vídeo encontrado contendo *"${termo}"*.`);
+    return;
+  }
+
+  let msg = `🔍 *Resultados para: "${termo}"*\n\n`;
+  videos.forEach((v, idx) => {
+    const shortTags = v.tags ? v.tags.split(',').slice(0, 3).join(', ') : 'sem tags';
+    msg += `*${idx + 1}. ${v.title}*\n`;
+    msg += `📺 Canal: ${v.channelName}\n`;
+    msg += `🏷️ Tags: ${shortTags}\n`;
+    msg += `🔗 https://youtu.be/${v.youtubeId}\n\n`;
+  });
+
+  await sendMessage(jid, msg);
+}
+
+async function handleCanais(jid: string) {
+  await sendMessage(jid, `📊 Gerando ranking de canais...`);
+
+  const canais = await prisma.video.groupBy({
+    by: ['channelName'],
+    where: { status: 'done' },
+    _count: { channelName: true },
+    orderBy: { _count: { channelName: 'desc' } },
+    take: 10,
+  });
+
+  if (canais.length === 0) {
+    await sendMessage(jid, `❌ Nenhum vídeo processado ainda para gerar estatísticas.`);
+    return;
+  }
+
+  const totalDone = await prisma.video.count({ where: { status: 'done' } });
+
+  let msg = `🏆 *Top 10 Canais Mais Assistidos*\n_Baseado em ${totalDone} vídeos concluídos_\n\n`;
+
+  canais.forEach((v, idx) => {
+    const percentage = Math.round((v._count.channelName / totalDone) * 100);
+    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '▪️';
+    msg += `${medal} *${v.channelName}*\n     ${v._count.channelName} vídeos (${percentage}%)\n\n`;
+  });
+
+  await sendMessage(jid, msg.trim());
+}
