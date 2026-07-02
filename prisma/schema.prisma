@@ -27,6 +27,8 @@ model Video {
   errorMessage  String?
   summaryPath   String?             // caminho do .md gerado
   transcriptRaw String?             // texto bruto da transcrição (para re-processamento)
+  tags          String?             // tags classificadas pelo LLM
+  retryCount    Int       @default(0) // quantidade de vezes que falhou ao processar
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

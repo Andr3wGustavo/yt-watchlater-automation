@@ -149,7 +149,14 @@ async function processNext(): Promise<void> {
     const textChannel = channel as TextChannel;
 
     // Verificar se há vídeos pendentes
-    let pendingCount = await prisma.video.count({ where: { status: 'pending' } });
+    let pendingCount = await prisma.video.count({ 
+      where: { 
+        OR: [
+          { status: 'pending' },
+          { status: 'failed', retryCount: { lt: 3 } }
+        ]
+      } 
+    });
 
     if (pendingCount === 0) {
       // Tentar sync antes de desistir
@@ -173,9 +180,14 @@ async function processNext(): Promise<void> {
       await textChannel.send(`🔄 Sync: **${totalNew}** vídeo(s) novo(s) encontrado(s) (${syncWL.newVideos} na WL, ${syncLiked.newVideos} nos Curtidos).`);
     }
 
-    // Pegar o mais antigo pendente
+    // Pegar o mais antigo pendente ou falho (retryable)
     const video = await prisma.video.findFirst({
-      where: { status: 'pending' },
+      where: { 
+        OR: [
+          { status: 'pending' },
+          { status: 'failed', retryCount: { lt: 3 } }
+        ]
+      },
       orderBy: { discoveredAt: 'asc' },
     });
 
@@ -185,7 +197,14 @@ async function processNext(): Promise<void> {
     }
 
     // Notificar início
-    const totalPending = await prisma.video.count({ where: { status: 'pending' } });
+    const totalPending = await prisma.video.count({ 
+      where: { 
+        OR: [
+          { status: 'pending' },
+          { status: 'failed', retryCount: { lt: 3 } }
+        ]
+      } 
+    });
 
     const startEmbed = new EmbedBuilder()
       .setColor(0xFFAA00)

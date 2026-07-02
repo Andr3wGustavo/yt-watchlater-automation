@@ -125,7 +125,11 @@ export async function processVideoFromDb(videoDbId: string): Promise<PipelineRes
 
     await prisma.video.update({
       where: { id: videoDbId },
-      data: { status: 'failed', errorMessage: `Transcrição: ${error.message}` },
+      data: { 
+        status: 'failed', 
+        errorMessage: `Transcrição: ${error.message}`,
+        retryCount: { increment: 1 }
+      },
     });
 
     return {
@@ -193,7 +197,11 @@ export async function processVideoFromDb(videoDbId: string): Promise<PipelineRes
 
     await prisma.video.update({
       where: { id: videoDbId },
-      data: { status: 'failed', errorMessage: `LLM: ${error.message}` },
+      data: { 
+        status: 'failed', 
+        errorMessage: `LLM: ${error.message}`,
+        retryCount: { increment: 1 }
+      },
     });
 
     return {
@@ -213,16 +221,24 @@ export async function processVideoFromDb(videoDbId: string): Promise<PipelineRes
   try {
     markdownPath = saveMarkdown(video.youtubeId, video.title, markdownContent);
 
+    // Extrair tags do markdown
+    const tagsMatch = markdownContent.match(/## 🏷️ Tags\n-\s*(.*?)\n/i);
+    const tags = tagsMatch ? tagsMatch[1].trim() : null;
+
     await prisma.video.update({
       where: { id: videoDbId },
-      data: { summaryPath: markdownPath },
+      data: { summaryPath: markdownPath, tags },
     });
   } catch (error: any) {
     log.error({ err: error.message }, 'Falha ao salvar .md');
 
     await prisma.video.update({
       where: { id: videoDbId },
-      data: { status: 'failed', errorMessage: `Salvar .md: ${error.message}` },
+      data: { 
+        status: 'failed', 
+        errorMessage: `Salvar .md: ${error.message}`,
+        retryCount: { increment: 1 }
+      },
     });
 
     return {

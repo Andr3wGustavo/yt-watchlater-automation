@@ -19,7 +19,14 @@ export const filaCommand: BotCommand = {
 
     try {
       // Garantir sync
-      const pendingCount = await prisma.video.count({ where: { status: 'pending' } });
+      const pendingCount = await prisma.video.count({ 
+        where: { 
+          OR: [
+            { status: 'pending' },
+            { status: 'failed', retryCount: { lt: 3 } }
+          ]
+        } 
+      });
 
       if (pendingCount === 0) {
         await interaction.editReply('🔄 Nenhum vídeo pendente. Sincronizando playlist...');
@@ -28,7 +35,12 @@ export const filaCommand: BotCommand = {
 
       // Buscar os N mais antigos
       const videos = await prisma.video.findMany({
-        where: { status: 'pending' },
+        where: { 
+          OR: [
+            { status: 'pending' },
+            { status: 'failed', retryCount: { lt: 3 } }
+          ]
+        },
         orderBy: { discoveredAt: 'asc' },
         take: quantidade,
       });

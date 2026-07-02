@@ -100,6 +100,22 @@ async function handleCommand(text: string, jid: string, sock: WASocket) {
         await handleProcessar(jid);
         break;
 
+      case '!pular':
+        if (args.length < 2) {
+          await sendMessage(jid, '❌ Uso: `!pular <url ou id>`');
+        } else {
+          await handlePular(jid, args[1]);
+        }
+        break;
+
+      case '!reprocessar':
+        if (args.length < 2) {
+          await sendMessage(jid, '❌ Uso: `!reprocessar <url ou id>`');
+        } else {
+          await handleReprocessar(jid, args[1]);
+        }
+        break;
+
       default:
         // Comando não reconhecido, ignorar para não fazer spam.
         break;
@@ -111,17 +127,23 @@ async function handleCommand(text: string, jid: string, sock: WASocket) {
 }
 
 async function handleStatus(jid: string) {
-  const [total, pending, processing, done, failed, skipped] = await Promise.all([
+  const [total, pending, processing, done, failed, skipped, pendingStats] = await Promise.all([
     prisma.video.count(),
     prisma.video.count({ where: { status: 'pending' } }),
     prisma.video.count({ where: { status: 'processing' } }),
     prisma.video.count({ where: { status: 'done' } }),
     prisma.video.count({ where: { status: 'failed' } }),
     prisma.video.count({ where: { status: 'skipped' } }),
+    prisma.video.aggregate({ _sum: { duration: true }, where: { status: 'pending' } }),
   ]);
 
   const lastSync = await prisma.appState.findUnique({ where: { key: 'lastSyncAt' } });
   const lastSyncStr = lastSync ? new Date(lastSync.value).toLocaleString('pt-BR') : 'Nunca';
+
+  const pendingDurationSeconds = pendingStats._sum.duration || 0;
+  const hours = Math.floor(pendingDurationSeconds / 3600);
+  const minutes = Math.floor((pendingDurationSeconds % 3600) / 60);
+  const pendingTimeStr = hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`;
 
   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
   const filled = Math.round(progressPercent / 10);
@@ -131,7 +153,7 @@ async function handleStatus(jid: string) {
   let msg = `🧠 *Watch Later Agent — Status*\n\n`;
   msg += `${bar} ${progressPercent}% consumido\n\n`;
   msg += `📊 Total: ${total}\n`;
-  msg += `⏳ Pendentes: ${pending}\n`;
+  msg += `⏳ Pendentes: ${pending} (⏱️ ~${pendingTimeStr})\n`;
   msg += `✅ Concluídos: ${done}\n`;
   msg += `❌ Falhos: ${failed}\n\n`;
   msg += `🔄 Último Sync: ${lastSyncStr}`;
@@ -173,3 +195,71 @@ async function handleProcessar(jid: string) {
     await sendMessage(jid, `❌ Falha ao processar *${video.title}*:\n${result.error}`);
   }
 }
+
+async function handlePular(jid: string, urlInput: string) {
+  const videoId = extractVideoId(urlInput);
+  if (!videoId) {
+    await sendMessage(jid, '❌ URL inválida. Use um link do YouTube ou um ID de vídeo.');
+    return;
+  }
+
+  const video = await prisma.video.findUnique({ where: { youtubeId: videoId } });
+  if (!video) {
+    await sendMessage(jid, `❌ Vídeo \`${videoId}\` não encontrado no banco de dados.`);
+    return;
+  }
+
+  if (video.status === 'skipped') {
+    await sendMessage(jid, `⚠️ O vídeo *${video.title}* já estava marcado como pulado.`);
+    return;
+  }
+
+  await prisma.video.update({
+    where: { id: video.id },
+    data: { status: 'skipped' }
+  });
+
+  await sendMessage(jid, `⏭️ Vídeo *${video.title}* pulado com sucesso!`);
+}
+
+async function handleReprocessar(jid: string, urlInput: string) {
+  const videoId = extractVideoId(urlInput);
+  if (!videoId) {
+    await sendMessage(jid, '❌ URL inválida. Use um link do YouTube ou um ID de vídeo.');
+    return;
+  }
+
+  await sendMessage(jid, '⏳ Reprocessando vídeo...');
+
+  const video = await prisma.video.findUnique({ where: { youtubeId: videoId } });
+  if (!video) {
+    await sendMessage(jid, `❌ Vídeo \`${videoId}\` não encontrado no banco de dados.`);
+    return;
+  }
+
+  await prisma.video.update({
+    where: { id: video.id },
+    data: { status: 'pending', retryCount: 0 }
+  });
+
+  const result = await processVideoFromDb(video.id);
+
+  if (result.status === 'success' && result.markdownPath) {
+    const fs = await import('node:fs');
+    const markdownContent = fs.readFileSync(result.markdownPath, 'utf8');
+    
+    const wppMsg = formatForWhatsApp({
+      title: result.title || video.title,
+      channelName: video.channelName,
+      url: `https://youtu.be/${video.id}`,
+      duration: null,
+      isShort: false,
+      markdownContent,
+    });
+
+    await sendMessage(jid, `✅ Reprocessado!\n\n${wppMsg}`);
+  } else {
+    await sendMessage(jid, `❌ Falha ao reprocessar *${video.title}*:\n${result.error}`);
+  }
+}
+

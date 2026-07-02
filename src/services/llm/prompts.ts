@@ -63,6 +63,9 @@ Parágrafo de 2-4 frases resumindo o conteúdo principal do vídeo.
 **P:** Pergunta 2
 **R:** Resposta 2
 
+## 🏷️ Tags
+- #tag1, #tag2, #tag3 (3 a 5 tags categorizando o conteúdo)
+
 ## 📋 Metadados
 | Campo | Valor |
 |:---|:---|
@@ -130,6 +133,9 @@ Uma frase concisa e impactante que resume o conteúdo do short.
 - **Tema 1** — breve descrição do que pesquisar para se aprofundar
 - **Tema 2** — breve descrição do que pesquisar para se aprofundar
 - **Tema 3** — breve descrição do que pesquisar para se aprofundar
+
+## 🏷️ Tags
+- #tag1, #tag2, #tag3 (3 a 5 tags categorizando o conteúdo)
 
 ## 📋 Metadados
 | Campo | Valor |

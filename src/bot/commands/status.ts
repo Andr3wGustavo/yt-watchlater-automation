@@ -13,7 +13,7 @@ export const statusCommand: BotCommand = {
 
     try {
       // Contar vídeos por status
-      const [total, pending, processing, done, failed, skipped, removed] = await Promise.all([
+      const [total, pending, processing, done, failed, skipped, removed, pendingStats] = await Promise.all([
         prisma.video.count(),
         prisma.video.count({ where: { status: 'pending' } }),
         prisma.video.count({ where: { status: 'processing' } }),
@@ -21,7 +21,13 @@ export const statusCommand: BotCommand = {
         prisma.video.count({ where: { status: 'failed' } }),
         prisma.video.count({ where: { status: 'skipped' } }),
         prisma.video.count({ where: { removedFromWL: true } }),
+        prisma.video.aggregate({ _sum: { duration: true }, where: { status: 'pending' } }),
       ]);
+
+      const pendingDurationSeconds = pendingStats._sum.duration || 0;
+      const hours = Math.floor(pendingDurationSeconds / 3600);
+      const minutes = Math.floor((pendingDurationSeconds % 3600) / 60);
+      const pendingTimeStr = hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`;
 
       // Último sync
       const lastSync = await prisma.appState.findUnique({ where: { key: 'lastSyncAt' } });
@@ -53,7 +59,7 @@ export const statusCommand: BotCommand = {
         .setDescription(`${progressBar} ${progressPercent}% consumido`)
         .addFields(
           { name: '📊 Total de Vídeos', value: `${total}`, inline: true },
-          { name: '⏳ Pendentes', value: `${pending}`, inline: true },
+          { name: '⏳ Pendentes', value: `${pending} (⏱️ ~${pendingTimeStr})`, inline: true },
           { name: '🔄 Processando', value: `${processing}`, inline: true },
           { name: '✅ Concluídos', value: `${done}`, inline: true },
           { name: '❌ Falhos', value: `${failed}`, inline: true },
