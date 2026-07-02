@@ -22,6 +22,38 @@ function getLLMProvider(): ILLMProvider {
 }
 
 /**
+ * Processa um vídeo a partir de uma URL/ID do YouTube sob demanda (sem fila).
+ * Usado para comandos via WhatsApp de links diretos.
+ */
+export async function processDirectUrl(url: string): Promise<PipelineResult> {
+  const youtubeId = extractVideoId(url) || url;
+
+  let video = await prisma.video.findUnique({ where: { youtubeId } });
+
+  if (!video) {
+    video = await prisma.video.create({
+      data: {
+        youtubeId,
+        title: 'URL Direta',
+        channelName: 'Desconhecido',
+        url: `https://www.youtube.com/watch?v=${youtubeId}`,
+        status: 'pending',
+        source: 'direct',
+      },
+    });
+  } else if (video.status === 'done') {
+    // Se já processou antes, a gente re-processa ou apenas devolve o sucesso?
+    // Vamos setar pra pending de novo pra forçar o reprocessamento se for link direto
+    await prisma.video.update({
+      where: { id: video.id },
+      data: { status: 'pending' }
+    });
+  }
+
+  return processVideoFromDb(video.id);
+}
+
+/**
  * Processa um vídeo a partir de uma URL/ID do YouTube.
  * Cria ou busca o registro no banco e executa o pipeline completo.
  */
@@ -208,8 +240,8 @@ export async function processVideoFromDb(videoDbId: string): Promise<PipelineRes
   let removeSuccess = false;
 
   // Só remove da WL se o vídeo é da playlist Watch Later
-  if (video.source === 'liked') {
-    log.info('Vídeo é da playlist Liked — pulando remoção da WL');
+  if (video.source !== 'watchlater') {
+    log.info(`Vídeo é da source '${video.source}' — pulando remoção da WL`);
     removeSuccess = true; // Não precisa remover, considerar sucesso
     steps.push({ step: 'remove', success: true, durationMs: 0 });
   } else {

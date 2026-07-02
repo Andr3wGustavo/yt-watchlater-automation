@@ -2,6 +2,7 @@ import type { TextChannel, Client } from 'discord.js';
 import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { prisma } from '../../db/client.js';
 import { syncPlaylistToDb } from '../youtube/playlist-reader.js';
+import { syncLikedToDb } from '../youtube/liked-reader.js';
 import { processVideoFromDb } from '../pipeline/processor.js';
 import { createChildLogger } from '../../utils/logger.js';
 
@@ -152,14 +153,16 @@ async function processNext(): Promise<void> {
 
     if (pendingCount === 0) {
       // Tentar sync antes de desistir
-      log.info('Sem vídeos pendentes, rodando sync...');
-      const sync = await syncPlaylistToDb();
+      log.info('Sem vídeos pendentes, rodando sync (Watch Later & Curtidos)...');
+      const syncWL = await syncPlaylistToDb();
+      const syncLiked = await syncLikedToDb();
+      const totalNew = syncWL.newVideos + syncLiked.newVideos;
 
-      if (sync.newVideos === 0) {
+      if (totalNew === 0) {
         const embed = new EmbedBuilder()
           .setColor(0x3498DB)
           .setTitle('🤖 Autopilot')
-          .setDescription('📭 Playlist vazia! Todos os vídeos foram processados.\n🛑 Autopilot desligado automaticamente.')
+          .setDescription('📭 Playlists vazias! Todos os vídeos foram processados.\n🛑 Autopilot desligado automaticamente.')
           .setTimestamp();
 
         await textChannel.send({ embeds: [embed] });
@@ -167,7 +170,7 @@ async function processNext(): Promise<void> {
         return;
       }
 
-      await textChannel.send(`🔄 Sync: **${sync.newVideos}** vídeo(s) novo(s) encontrado(s).`);
+      await textChannel.send(`🔄 Sync: **${totalNew}** vídeo(s) novo(s) encontrado(s) (${syncWL.newVideos} na WL, ${syncLiked.newVideos} nos Curtidos).`);
     }
 
     // Pegar o mais antigo pendente

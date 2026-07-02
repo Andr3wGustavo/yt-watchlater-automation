@@ -9,6 +9,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { createChildLogger } from '../../utils/logger.js';
 import { getConfig } from '../../config/env.js';
+import { handleIncomingMessage } from './message-handler.js';
 
 const log = createChildLogger('whatsapp');
 
@@ -92,6 +93,15 @@ export async function initWhatsApp(): Promise<WASocket | null> {
       } else if (connection === 'open') {
         isConnected = true;
         log.info('📱 WhatsApp conectado com sucesso!');
+      }
+    });
+
+    // Escutar mensagens recebidas
+    sock.ev.on('messages.upsert', async (m) => {
+      if (m.type === 'notify' && m.messages.length > 0) {
+        for (const msg of m.messages) {
+          await handleIncomingMessage(msg, sock!);
+        }
       }
     });
 
